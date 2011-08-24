@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Akonadi TODO.txt Resource
+Comment=Resource for TODO.txt task backend
+
+Type=AkonadiResource
+Exec=akonadi_todo_txt_akonadi_resource
+Icon=text-directory
+
+X-Akonadi-MimeTypes=text/directory
+X-Akonadi-Capabilities=Resource
+X-Akonadi-Identifier=akonadi_todo_txt_akonadi_resource

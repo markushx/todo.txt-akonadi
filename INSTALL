@@ -1,0 +1,5 @@
+sudo cp akonadi_todo_txt_akonadi_resource /usr/bin/
+sudo cp ../todo_txt_akonadiresource.desktop /usr/share/akonadi/agents/
+
+#sudo cp build/akonadi_todo_txt_akonadi_resource /usr/bin/
+#sudo cp todo_txt_akonadiresource.desktop /usr/share/akonadi/agents/
