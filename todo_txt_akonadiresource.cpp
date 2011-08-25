@@ -51,7 +51,7 @@ void todo_txt_akonadiResource::retrieveCollections()
   c.setName( name() );
 
   QStringList mimeTypes;
-  mimeTypes << QLatin1String("text/plain");
+  mimeTypes << QLatin1String("text/calendar");
   c.setContentMimeTypes( mimeTypes );
 
   Collection::List list;
