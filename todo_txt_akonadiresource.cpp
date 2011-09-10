@@ -6,12 +6,19 @@
 #include <kfiledialog.h>
 #include <klocalizedstring.h>
 
-#include <todo.h>
-
 #include <QtDBus/QDBusConnection>
 #include <QtCore/QFileSystemWatcher>
 
+#include <todo.h>
+#include <event.h>
+
+#include <akonadi/itemfetchscope.h>
+#include <akonadi/changerecorder.h>
+
 using namespace Akonadi;
+
+typedef boost::shared_ptr<KCalCore::Incidence> IncidencePtr;
+typedef boost::shared_ptr<KCalCore::Todo> TodoPtr;
 
 todo_txt_akonadiResource::todo_txt_akonadiResource( const QString &id )
   : ResourceBase( id ),
@@ -21,7 +28,7 @@ todo_txt_akonadiResource::todo_txt_akonadiResource( const QString &id )
   QDBusConnection::sessionBus().registerObject( QLatin1String( "/Settings" ),
 						Settings::self(),
 						QDBusConnection::ExportAdaptors );
-  // TODO: you can put any resource specific initialization code here.
+  changeRecorder()->itemFetchScope().fetchFullPayload();
 }
 
 todo_txt_akonadiResource::~todo_txt_akonadiResource()
@@ -105,6 +112,8 @@ void todo_txt_akonadiResource::retrieveItems( const Akonadi::Collection &collect
     lineno++;
   }
 
+  todoFile.close();
+
   itemsRetrieved( items );
 }
 
@@ -174,20 +183,73 @@ void todo_txt_akonadiResource::configure( WId windowId )
 void todo_txt_akonadiResource::itemAdded( const Akonadi::Item &item,
 					  const Akonadi::Collection &collection )
 {
-  Q_UNUSED( item );
   Q_UNUSED( collection );
+
+  kWarning() << "itemAdded() item id="  << item.id()
+	     << ", remoteId=" << item.remoteId()
+	     << ", mimeType=" << item.mimeType();
 
   // TODO: this method is called when somebody else, e.g. a client application,
   // has created an item in a collection managed by your resource.
 
   // NOTE: There is an equivalent method for collections, but it isn't part
   // of this template code to keep it simple
+
+  KCalCore::Todo::Ptr todo;
+  IncidencePtr ptrEvent;
+
+  kWarning() << "hasPayload()" << item.hasPayload();
+
+  if (item.hasPayload<KCalCore::Todo::Ptr>()) {
+    kWarning() << "todo::Ptr ";// << todo->summary();
+    todo = item.payload<KCalCore::Todo::Ptr>();
+
+    if (todo) {
+      kWarning() << "summary: " << todo->summary();
+
+      const QString todoFileName = collection.remoteId();
+      QFile todoFile(todoFileName);
+
+      if (!todoFile.open(QIODevice::ReadWrite | QIODevice::Text)) {
+	// TODO: Indicate fail.
+	return;
+      }
+
+      QTextStream stream(&todoFile);
+      int lineno = 0;
+      while (!stream.atEnd()) {
+	QString line = stream.readLine();
+	Q_UNUSED( line );
+	lineno++;
+      }
+      stream << todo->summary() << "\n";
+      todoFile.close();
+
+      QString remoteId(todoFileName + QLatin1Char( '/' ) + QString::number(lineno));
+
+      Item newItem( item );
+      newItem.setRemoteId( remoteId );
+      newItem.setPayload<KCalCore::Todo::Ptr>( todo );
+
+      changeCommitted( newItem );
+    }
+
+  } else {
+    kError() << "Add without TODO payload!";
+    const QString message = i18nc("@info:status",
+				  "No TODO payload to add event.");
+    emit error(message);
+    emit status(Broken, message);
+  }
+  kWarning() << "itemAdded~";
 }
 
 void todo_txt_akonadiResource::itemChanged( const Akonadi::Item &item, const QSet<QByteArray> &parts )
 {
   Q_UNUSED( item );
   Q_UNUSED( parts );
+
+  kWarning() << "itemChanged() item id="  << item.id();
 
   // TODO: this method is called when somebody else, e.g. a client application,
   // has changed an item managed by your resource.
@@ -199,6 +261,8 @@ void todo_txt_akonadiResource::itemChanged( const Akonadi::Item &item, const QSe
 void todo_txt_akonadiResource::itemRemoved( const Akonadi::Item &item )
 {
   Q_UNUSED( item );
+
+  kWarning() << "itemRemoved() item id="  << item.id();
 
   // TODO: this method is called when somebody else, e.g. a client application,
   // has deleted an item managed by your resource.
