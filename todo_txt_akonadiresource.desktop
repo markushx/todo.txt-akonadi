@@ -4,8 +4,8 @@ Comment=Resource for TODO.txt task backend
 
 Type=AkonadiResource
 Exec=akonadi_todo_txt_akonadi_resource
-Icon=text-directory
+Icon=text-calendar
 
-X-Akonadi-MimeTypes=text/directory
+X-Akonadi-MimeTypes=text/calendar,application/x-vnd.akonadi.calendar.todo
 X-Akonadi-Capabilities=Resource
 X-Akonadi-Identifier=akonadi_todo_txt_akonadi_resource
