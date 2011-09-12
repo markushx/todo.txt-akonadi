@@ -262,13 +262,77 @@ void todo_txt_akonadiResource::itemRemoved( const Akonadi::Item &item )
 {
   Q_UNUSED( item );
 
-  kWarning() << "itemRemoved() item id="  << item.id();
+  kWarning() << "itemRemoved() item id="  << item.id()
+	     << "remoteId=" << item.remoteId();
 
-  // TODO: this method is called when somebody else, e.g. a client application,
-  // has deleted an item managed by your resource.
+  int lastslash = item.remoteId().lastIndexOf("/");
+  kWarning() << "slash is at: " << lastslash;
+  if (lastslash < 0) {
+    kError() << "remoteId malformed: " << item.remoteId();
+    const QString message = i18nc("@info:status",
+				  "RemoteId is malformed (Did not find /).");
+    emit error(message);
+    emit status(Broken, message);
+    return;
+  }
 
-  // NOTE: There is an equivalent method for collections, but it isn't part
-  // of this template code to keep it simple
+  const QString todoFileName = item.remoteId().left(lastslash);
+  const QString linenotodelete = item.remoteId().right(item.remoteId().size() - lastslash - 1);
+
+  kWarning() << "todoFileName: " << todoFileName;
+  kWarning() << "lineNo: " << linenotodelete;
+
+  bool conv_ok = false;
+  const int linenotodelete_int = linenotodelete.toInt(&conv_ok);
+  if (conv_ok == false) {
+    kError() << "remoteId line number not an integer: " << linenotodelete;
+    const QString message = i18nc("@info:status",
+				  "RemoteId is malformed (Line number is not an integer).");
+    emit error(message);
+    emit status(Broken, message);
+    return;
+  }
+
+  QFile todoFile(todoFileName);
+  QFile todoTmpFile(todoFileName+".tmp");
+
+  if (!todoFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    kError() << "Could not open TODO file.";
+    const QString message = i18nc("@info:status",
+				  "Could not open TODO file.");
+    emit error(message);
+    emit status(Broken, message);
+    return;
+  }
+
+  QTextStream stream(&todoFile);
+  QTextStream tmpstream(&todoTmpFile);
+
+  kWarning() << "Trying to remove line " << linenotodelete_int;
+
+  int lineno = 0;
+  while (!stream.atEnd()) {
+    QString line = stream.readLine();
+    if (lineno == linenotodelete_int) {
+      kWarning() << "Not copying line " << lineno
+		 << " to tmp file: \n" << line;
+      lineno++;
+      continue;
+    }
+    kWarning() << "Copying line " << lineno
+	       << " to tmp file: \n" << line;
+    tmpstream << line;
+    lineno++;
+  }
+
+  kWarning() << "Removing file " << todoFileName;
+  todoFile.remove();
+  kWarning() << "Renaming file " << todoFileName << ".tmp to "<< todoFileName;
+  todoTmpFile.rename(todoFileName);
+
+  kWarning() << "Done removing";
+  changeCommitted( item );
+  kWarning() << "itemRemoved~";
 }
 
 AKONADI_RESOURCE_MAIN( todo_txt_akonadiResource )
