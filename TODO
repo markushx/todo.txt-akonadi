@@ -1,6 +1,4 @@
-* fix the bugs
-* handle itemchanged()
 * map todo.txt priorities (e.g. (A)) to korganizer priorities
 * map todo.txt context (e.g. @home) to korganizer catergories
 * map todo.txt due date (e.g. due:2011-03-02) to korganizer due date
-
+* fix the bugs

@@ -249,16 +249,113 @@ void todo_txt_akonadiResource::itemAdded( const Akonadi::Item &item,
 
 void todo_txt_akonadiResource::itemChanged( const Akonadi::Item &item, const QSet<QByteArray> &parts )
 {
-  Q_UNUSED( item );
   Q_UNUSED( parts );
 
   kWarning() << "itemChanged() item id="  << item.id();
 
-  // TODO: this method is called when somebody else, e.g. a client application,
-  // has changed an item managed by your resource.
+  if (item.hasPayload<KCalCore::Todo::Ptr>()) {
+    kWarning() << "todo::Ptr ";// << todo->summary();
+    KCalCore::Todo::Ptr todo = item.payload<KCalCore::Todo::Ptr>();
 
-  // NOTE: There is an equivalent method for collections, but it isn't part
-  // of this template code to keep it simple
+    if (todo) {
+      kWarning() << "summary: " << todo->summary();
+
+      int lastslash = item.remoteId().lastIndexOf("/");
+      kWarning() << "slash is at: " << lastslash;
+      if (lastslash < 0) {
+	kError() << "remoteId malformed: " << item.remoteId();
+	const QString message = i18nc("@info:status",
+				      "RemoteId is malformed (Did not find /).");
+	emit error(message);
+	emit status(Broken, message);
+	return;
+      }
+
+      const QString todoFileName = item.remoteId().left(lastslash);
+      const QString hashOfLineToModify = item.remoteId().right(item.remoteId().size() - lastslash - 1);
+
+      kWarning() << "todoFileName: " << todoFileName;
+      kWarning() << "todoTmpFileName: " << (todoFileName+".tmp");
+      kWarning() << "hashOfLineToModify: " << hashOfLineToModify;
+
+      QFile todoFile(todoFileName);
+      QFile todoTmpFile(todoFileName+".tmp");
+
+      if (!todoFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+	kError() << "Could not open TODO file.";
+	const QString message = i18nc("@info:status",
+				      "Could not open TODO file.");
+	emit error(message);
+	emit status(Broken, message);
+	return;
+      }
+
+      if (!todoTmpFile.open(QIODevice::ReadWrite | QIODevice::Text)) {
+	kError() << "Could not open temporary TODO file.";
+	const QString message = i18nc("@info:status",
+				      "Could not open temporary TODO file.");
+	emit error(message);
+	emit status(Broken, message);
+	return;
+      }
+
+      QTextStream stream(&todoFile);
+      QTextStream tmpstream(&todoTmpFile);
+
+      while (!stream.atEnd()) {
+	QString line = stream.readLine();
+
+	QCryptographicHash hash( QCryptographicHash::Sha1 );
+	hash.addData( line.toUtf8() );
+	QString hashOfLine = QString(hash.result().toHex());
+
+	kWarning() << "hashOfLine: " << hashOfLine;
+
+	if (hashOfLineToModify == hashOfLine) {
+	  kWarning() << "Found modified line: " << line;
+	  tmpstream << todo->summary() << "\n";
+	  kWarning() << "Replaced with: " << todo->summary();
+	} else {
+	  kWarning() << "This line was not modified: " << line;
+	  tmpstream << line << "\n";
+	}
+      }
+
+      todoTmpFile.close();
+      todoFile.close();
+
+      kWarning() << "Removing watch on file " << todoFileName;
+      m_fsWatcher->removePath( todoFileName );
+
+      kWarning() << "Removing file " << todoFileName;
+      todoFile.remove();
+
+      kWarning() << "Renaming file " << todoFileName << ".tmp to "<< todoFileName;
+      todoTmpFile.rename(todoFileName);
+
+      kWarning() << "Adding watch on file " << todoFileName;
+      m_fsWatcher->addPath( todoFileName );
+
+      QCryptographicHash hash( QCryptographicHash::Sha1 );
+      hash.addData( todo->summary().toUtf8() );
+
+      QString remoteId(todoFileName + QLatin1Char( '/' ) + QString(hash.result().toHex()));
+
+      Item newItem( item );
+      newItem.setRemoteId( remoteId );
+      newItem.setPayload<KCalCore::Todo::Ptr>( todo );
+
+      changeCommitted( newItem );
+    }
+
+  } else {
+    kError() << "Change without TODO payload!";
+    const QString message = i18nc("@info:status",
+				  "No TODO payload to change event.");
+    emit error(message);
+    emit status(Broken, message);
+  }
+  kWarning() << "itemChanged~";
 }
 
 void todo_txt_akonadiResource::itemRemoved( const Akonadi::Item &item )
