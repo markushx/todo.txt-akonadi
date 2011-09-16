@@ -9,6 +9,8 @@
 #include <QtDBus/QDBusConnection>
 #include <QtCore/QFileSystemWatcher>
 
+#include <QCryptographicHash>
+
 #include <todo.h>
 #include <event.h>
 
@@ -94,27 +96,31 @@ void todo_txt_akonadiResource::retrieveItems( const Akonadi::Collection &collect
   // read each line in todo.txt
   Item::List items;
   QTextStream in(&todoFile);
-  int lineno = 0;
+
   while (!in.atEnd()) {
     QString line = in.readLine();
 
-    QString remoteId(todoFileName + QLatin1Char( '/' ) + QString::number(lineno));
+    QCryptographicHash hash( QCryptographicHash::Sha1 );
+    hash.addData( line.toUtf8() );
+
+    kWarning() << "line: " << line
+	       << "hash: " << hash.result().toHex();
 
     KCalCore::Todo::Ptr todo(new KCalCore::Todo);
     todo->setSummary(line);
 
     Item item("application/x-vnd.akonadi.calendar.todo");
-    item.setRemoteId(remoteId);
+    QString itemRemoteId(todoFileName + QLatin1Char( '/' ) + QString(hash.result().toHex()));
+    item.setRemoteId(itemRemoteId);
     item.setPayload<KCalCore::Todo::Ptr>(todo);
 
     items << item;
-
-    lineno++;
   }
 
   todoFile.close();
 
   itemsRetrieved( items );
+  kWarning() << "~retrieve items";
 }
 
 bool todo_txt_akonadiResource::retrieveItem( const Akonadi::Item &item,
@@ -210,22 +216,19 @@ void todo_txt_akonadiResource::itemAdded( const Akonadi::Item &item,
       const QString todoFileName = collection.remoteId();
       QFile todoFile(todoFileName);
 
-      if (!todoFile.open(QIODevice::ReadWrite | QIODevice::Text)) {
+      if (!todoFile.open(QIODevice::Append | QIODevice::Text)) {
 	// TODO: Indicate fail.
 	return;
       }
 
       QTextStream stream(&todoFile);
-      int lineno = 0;
-      while (!stream.atEnd()) {
-	QString line = stream.readLine();
-	Q_UNUSED( line );
-	lineno++;
-      }
       stream << todo->summary() << "\n";
       todoFile.close();
 
-      QString remoteId(todoFileName + QLatin1Char( '/' ) + QString::number(lineno));
+      QCryptographicHash hash( QCryptographicHash::Sha1 );
+      hash.addData( todo->summary().toUtf8() );
+
+      QString remoteId(todoFileName + QLatin1Char( '/' ) + QString(hash.result().toHex()));
 
       Item newItem( item );
       newItem.setRemoteId( remoteId );
@@ -277,21 +280,11 @@ void todo_txt_akonadiResource::itemRemoved( const Akonadi::Item &item )
   }
 
   const QString todoFileName = item.remoteId().left(lastslash);
-  const QString linenotodelete = item.remoteId().right(item.remoteId().size() - lastslash - 1);
+  const QString hashOfLineToDelete = item.remoteId().right(item.remoteId().size() - lastslash - 1);
 
   kWarning() << "todoFileName: " << todoFileName;
-  kWarning() << "lineNo: " << linenotodelete;
-
-  bool conv_ok = false;
-  const int linenotodelete_int = linenotodelete.toInt(&conv_ok);
-  if (conv_ok == false) {
-    kError() << "remoteId line number not an integer: " << linenotodelete;
-    const QString message = i18nc("@info:status",
-				  "RemoteId is malformed (Line number is not an integer).");
-    emit error(message);
-    emit status(Broken, message);
-    return;
-  }
+  kWarning() << "todoTmpFileName: " << (todoFileName+".tmp");
+  kWarning() << "hashOfLineToDelete: " << hashOfLineToDelete;
 
   QFile todoFile(todoFileName);
   QFile todoTmpFile(todoFileName+".tmp");
@@ -305,33 +298,54 @@ void todo_txt_akonadiResource::itemRemoved( const Akonadi::Item &item )
     return;
   }
 
+  if (!todoTmpFile.open(QIODevice::ReadWrite | QIODevice::Text)) {
+    kError() << "Could not open temporary TODO file.";
+    const QString message = i18nc("@info:status",
+				  "Could not open temporary TODO file.");
+    emit error(message);
+    emit status(Broken, message);
+    return;
+  }
+
   QTextStream stream(&todoFile);
   QTextStream tmpstream(&todoTmpFile);
 
-  kWarning() << "Trying to remove line " << linenotodelete_int;
-
-  int lineno = 0;
   while (!stream.atEnd()) {
     QString line = stream.readLine();
-    if (lineno == linenotodelete_int) {
-      kWarning() << "Not copying line " << lineno
-		 << " to tmp file: \n" << line;
-      lineno++;
+
+    QCryptographicHash hash( QCryptographicHash::Sha1 );
+    hash.addData( line.toUtf8() );
+    QString hashOfLine = QString(hash.result().toHex());
+
+    kWarning() << "hashOfLine: " << hashOfLine;
+
+    if (hashOfLineToDelete == hashOfLine) {
+      kWarning() << "NOT copying line to tmp file: " << line;
       continue;
+    } else {
+      kWarning() << "Copying line to tmp file: " << line;
+      tmpstream << line << "\n";
     }
-    kWarning() << "Copying line " << lineno
-	       << " to tmp file: \n" << line;
-    tmpstream << line;
-    lineno++;
   }
+
+  todoTmpFile.close();
+  todoFile.close();
+
+  kWarning() << "Removing watch on file " << todoFileName;
+  m_fsWatcher->removePath( todoFileName );
 
   kWarning() << "Removing file " << todoFileName;
   todoFile.remove();
+
   kWarning() << "Renaming file " << todoFileName << ".tmp to "<< todoFileName;
   todoTmpFile.rename(todoFileName);
 
+  kWarning() << "Adding watch on file " << todoFileName;
+  m_fsWatcher->addPath( todoFileName );
+
   kWarning() << "Done removing";
   changeCommitted( item );
+
   kWarning() << "itemRemoved~";
 }
 
